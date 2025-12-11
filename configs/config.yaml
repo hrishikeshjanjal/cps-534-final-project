@@ -30,3 +30,11 @@ berkeley:
 activity:
   ann_features_path: "data/csh103/csh103.ann.features.csv"
   processed_activity_csv: "data/processed/csh103_activity.csv"
+
+llm:
+  enabled: true
+  provider: "ollama"
+  model: "llama3.1"
+  max_tokens: 120
+  temperature: 0.2
+  endpoint: "http://localhost:11434/api/generate"

@@ -5,7 +5,7 @@ from src.config_loader import load_config
 from src.data.stream import get_sensor_stream
 from src.core.state import DeskState
 from src.core.controller import Controller
-from src.ai.llm_client import generate_coaching_tip
+from src.ai.llm_client import LLMClient
 from src.hw.actuators import ConsoleActuator
 from src.logging.logger import SimulationLogger
 
@@ -32,6 +32,7 @@ def main():
     config = load_config(args.config)
 
     controller = Controller(config)
+    llm_client = LLMClient(config)
     state = DeskState()
 
     sampling_cfg = config.get("sampling", {})
@@ -58,16 +59,16 @@ def main():
             state, actions = controller.step(sensor, state, dt_seconds=delta, now=ts)
             latency_ms = (time.perf_counter() - t0) * 1000.0
 
-            # LLM-style explanation
-            llm_message = ""
+            # LLM-style explanation (with fallback)
+            llm_message = llm_client.explain_decision(sensor, actions)
             if actions:
-                llm_message = generate_coaching_tip(sensor, actions)
                 print(
                     f"[{ts.isoformat()}] present={sensor['present']} "
                     f"light={sensor['light_lux']:.1f} temp={sensor['temperature_c']:.1f}C "
                     f"hum={sensor['humidity_pct']:.1f}% -> actions={actions}"
                 )
-                print(f"  [ASSISTANT] {llm_message}")
+                if llm_message:
+                    print(f"  [ASSISTANT] {llm_message}")
 
             # Actuators (simulated)
             actuator.set_light(state.light_on)
