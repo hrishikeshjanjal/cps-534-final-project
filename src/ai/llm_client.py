@@ -57,6 +57,17 @@ class LLMClient:
             return llm_text
         return self._rule_based_coaching(sensor, actions)
 
+    def generate_from_prompt(
+        self, prompt: str, fallback: Optional[str] = None
+    ) -> str:
+        """
+        Generic helper to request text from the LLM with an optional fallback string.
+        """
+        llm_text = self._call_llm(prompt)
+        if llm_text:
+            return llm_text
+        return fallback or ""
+
     def _call_llm(self, prompt: str) -> Optional[str]:
         """
         Call the Ollama endpoint. Returns None on failure to trigger fallback logic.
@@ -99,6 +110,50 @@ class LLMClient:
         if isinstance(text, str):
             return text.strip()
         return None
+
+    def call_with_reason(self, prompt: str) -> (Optional[str], str):
+        """
+        Call LLM and provide a human-readable reason if None is returned.
+        """
+        if not self.config.enabled:
+            return None, "LLM disabled in config."
+        if self.config.provider.lower() != "ollama":
+            return None, f"Unsupported provider: {self.config.provider}"
+
+        payload: Dict[str, Any] = {
+            "model": self.config.model,
+            "prompt": prompt,
+            "options": {"temperature": self.config.temperature},
+            "stream": False,
+        }
+        if self.config.max_tokens > 0:
+            payload["options"]["num_predict"] = int(self.config.max_tokens)
+
+        data = json.dumps(payload).encode("utf-8")
+        req = request.Request(
+            self.config.endpoint,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        try:
+            with request.urlopen(req, timeout=self.http_timeout) as resp:
+                raw = resp.read()
+                if resp.status != 200:
+                    return None, f"HTTP status {resp.status}"
+        except (error.URLError, TimeoutError) as exc:
+            return None, f"Request failed: {exc}"
+
+        try:
+            parsed = json.loads(raw.decode("utf-8"))
+        except ValueError as exc:
+            return None, f"Invalid JSON: {exc}"
+
+        text = parsed.get("response")
+        if isinstance(text, str):
+            return text.strip(), "ok"
+        return None, "Missing 'response' in payload"
 
     def _build_explain_prompt(
         self, sensor: Dict[str, Any], actions: List[str]
